@@ -1,0 +1,26 @@
+# analysis of zhang dataset
+# assumes you unzip zhang.data.tar.gz to zhang directory
+source("~/Desktop/BIOSTAT/msage/R/msage.R")
+#use this as the source for the msage code
+#dont library msage, its gone :/
+f<-dir("~/Desktop/BIOSTAT/bioinformatics_23_21_2881_s1/zhang","txt",full.n=T);
+#change direction to where your zhang file is located
+a<-read.sage(f[c(6,7,11,12)]);
+print(a)
+k<-rowSums(a$data)>2;
+zhang<-list(data=a$data[k,],groups=c(1,1,2,2),lib.size=a$lib.size);
+alpha<-alpha.approxeb(zhang);
+ms<-msage(zhang,alpha=alpha$alpha);
+lu<-runLu(zhang,other.r=ms$r);
+adj.p <- p.adjust(ms$exact, method = "fdr") #added method= and added it before k
+k<-(adj.p<.05)
+all<-cbind(zhang$data,adj.p,sign(rowSums(zhang$data[,1:2])-rowSums(zhang$data[,3:4])))
+write.table(all[k,],"all.csv",sep=",")
+pdf("figure5.pdf",width=12,height=6);
+par(mfrow=c(1,2));
+plot(ms$ps$p,1/ms$r,log="x",xlab="lambda",ylab="phi",pch=19,cex=.5,cex.axis=1.5,cex.lab=1.5); mtext("A",adj=0,cex=2,padj=-.75);
+plot(log2(ms$ps$p1)+log2(ms$ps$p2),log2(ms$ps$p2/ms$ps$p1),ylim=c(-7,7),xlim=c(-35,-10),pch="+",xlab="log proportion",ylab="log Fold Change",cex.axis=1.5,cex.lab=1.5);
+mtext("B",adj=0,cex=2,padj=-.75);
+points(log2(ms$ps$p1)[k]+log2(ms$ps$p2)[k],log2(ms$ps$p2/ms$ps$p1)[k],col="grey",pch=19);
+dev.off()
+
