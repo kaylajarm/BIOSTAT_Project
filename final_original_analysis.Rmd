@@ -1,0 +1,111 @@
+---
+title: "ORIGINAL ANALYSIS"
+author: "Martinez"
+date: "2025-04-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading in required packages
+
+```{r }
+library(edgeR)
+library(MASS)
+source("C:/Users/megan/msage.R")  
+library(multcomp)
+```
+
+# Function that will create the fd plot data
+```{r}
+fd_maker <- function(n,b,seed) {
+  set.seed(seed)
+  library(edgeR)
+  source("C:/Users/megan/msage.R")
+  total_tags <- 10000 #there are total of 10,000 tags in the simulation
+  de_genes_n <- total_tags * 0.1 # 10% are DE genes
+  # making a vector of trues and falses regarding if they are differentially expressed
+  gene_types <- c(rep(TRUE, de_genes_n), rep(FALSE, total_tags - de_genes_n))
+  #b <- 8  # #implanted difference for the small test
+  #n <- 2  # replicates per group
+  
+  # mean gene expressions for both groups
+  mu <- rep(10, total_tags) # #starting average gene expression
+  mu1 <- mu; mu1[gene_types] <- mu[gene_types] / sqrt(b) #DE genes group 1
+  mu2 <- mu; mu2[gene_types] <- mu[gene_types] * sqrt(b) #DE genes group 2
+  
+  # creating the random library sizes
+  library_sizes <- matrix(runif(2 * n, 30000, 90000), nrow = 2) # paper says the range of library sizes simulated were from 30,000 to 90,000
+  
+  # actually simulating the data
+  counts <- matrix(0, nrow = total_tags, ncol = 2 * n)
+  # creates random dispersion values since they wouldn't be the same between groups
+  disp1 <- rgamma(total_tags, shape = 0.85, scale = 0.5)
+  disp2 <- rgamma(total_tags, shape = 0.85, scale = 0.5)
+  # for loop to fill the counts matrix that will hold all the simulated data for the two groups, dividing by 1e6 to scale the data so that it would be counts per library, which uses counts per million scaling which takes into account the multiplied by the library size condition of the simulation. this just makes the simulation proportional to library size, and it does not work without scaling it like this
+  for (tag in 1:total_tags) {
+    counts[tag, 1:n] <- rnbinom(n, mu = mu1[tag] * library_sizes[1, 1:n] / 1e6, size = 1 / disp1[tag])
+    counts[tag, (n+1):(2*n)] <- rnbinom(n, mu = mu2[tag] * library_sizes[2, 1:n] / 1e6, size = 1 / disp2[tag])
+  }
+  # running edgeR to actually determine the differentially expressed genes
+  groups <- rep(1:2, each = n)
+  dge <- DGEList(counts = counts, group = groups) # Assembles a DGEList object from its components
+  dge <- normLibSizes(dge) #Calculate scaling factors to convert the raw library sizes for a set of sequenced samples into normalized effective library sizes.
+  dge <- estimateDisp(dge,trend.method = "loess") # Maximizes the negative binomial likelihood to give the estimate of the common, trended and tagwise dispersions across all tags -> needed to run the actual model later
+  
+  # Exact.EB
+  et <- exactTest(dge) # runs the moderated test from the paper
+  pvals_exact <- et$table$PValue # extracts the p-values from the exact test table
+  #preparing and plotting the false discovery curves. order allows us to determine what has the least pvalue and the greatest to determine which is the most differentially expressed. cum sums to give false discoveries from the top genes
+  fd_exact <- cumsum(!gene_types[order(pvals_exact)])
+  return(fd_exact)
+}
+```
+
+
+# Getting fd plots for particular b values
+```{r}
+# to make this replicable, I am going to make the seeds 104,103,102,101 for each respective b value so that each simulation of count data is independent and thus the false discovery rate results should be independent for each particular b
+
+fd2_4 <- fd_maker(2,4,104)
+fd2_3 <- fd_maker(2,3,103)
+fd2_2 <- fd_maker(2,2,102)
+fd2_1 <- fd_maker(2,1,101)
+```
+
+# actually graphing the points
+```{r}
+plot(1:1000, fd2_4[1:1000], type = 'l', col = 'blue', lwd = 2,
+     xlim = c(0, 1000),
+     log = "y", xlab = "Top ranked genes", ylab = "False discoveries",
+     main = paste0("fixed n=2, varied b (fold change)"))
+lines(1:1000, fd2_3[1:1000], col = 'firebrick1', lwd = 2)
+lines(1:1000, fd2_2[1:1000], col = 'forestgreen', lwd = 2)
+lines(1:1000, fd2_1[1:1000],col = 'purple', lwd = 2)
+
+legend("bottomright", legend = c("b=4", "b=3", "b=2","b=1"),
+       fill = c("blue", "firebrick1", "forestgreen",'purple'), bty = "n")
+```
+# running a kruskal wallis to determine if the false discovery rate is significantly different between the 4 fold change values for the first 500 tags
+```{r}
+# running a kruskal wallis because the false discovery plot is not normally distributed
+y <- c(fd2_4[1:500], fd2_3[1:500], fd2_2[1:500], fd2_1[1:500])
+x <- c(rep(4,500),rep(3,500),rep(2,500),rep(1,500))
+data <- data.frame(fold_change=as.factor(x),fd=y)
+kruskal.test(fd~fold_change, data=data)
+```
+Since the p-value is so small, we reject the null hypothesis and conclude that at least one b value's false discovery rate is significantly different from the other false discovery rates at different b's 
+
+```{r}
+# to determine which / how many are significantly different, going to do post hoc Dunn's test 
+library(FSA)
+dunnTest(fd~fold_change,data=data,method='bonferroni') # chose the bonferroni test because it's the most conservative
+
+```
+At alpha = .05, all of the fold change values of b are significantly different from one another except for when b=1 and b=2. Thus, this test is sensitive to true differences between DE and non-DE genes up to 2, as there is no significant difference in false discovery rate for fold change values below 2. 
+
+
+
+
