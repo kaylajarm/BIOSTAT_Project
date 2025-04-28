@@ -60,7 +60,7 @@ runLu <- function(counts, groups) {
 
 # Function to generate a ggplot ROC curve for a given dispersion
 generate_roc_plot <- function(disp_value, panel_label) {
-  n_runs <- 20
+  n_runs <- 40
   fpr_seq <- seq(0, 0.1, by = 0.002)
   
   tprs_exact <- matrix(0, nrow = n_runs, ncol = length(fpr_seq))
